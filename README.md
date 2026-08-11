@@ -1,6 +1,6 @@
 # Arcademia AI
 
-Agentic Game Intelligence Platform that analyzes Steam game data using NLP, transformer models, semantic search, RAG, and AI workflows.
+Agentic AI-powered game intelligence platform using RAG, LangGraph, NLP, semantic search, and LLM workflows to analyze Steam games and player reviews.
 
 ## Documentation
 
