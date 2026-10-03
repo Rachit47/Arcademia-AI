@@ -1,3209 +1,1402 @@
 # Arcademia AI
-## Agentic Game Intelligence Platform
+## Software Requirements Specification (SRS)
 
-# Software Design Document
-
-Version: 1.0
-
----
-
-# 1. Introduction
-
-## 1.1 Document Purpose
-
-This document explains the design and architecture of Arcademia AI, an AI-powered game intelligence platform built using Steam game data, Natural Language Processing, transformer models, semantic search, Retrieval-Augmented Generation (RAG), and agent-based workflows.
-
-The purpose of this document is to describe the system requirements, architecture decisions, data flow, component responsibilities, and engineering approach used to build the platform.
-
-The document focuses on creating a system that is modular, maintainable, scalable, and easy to extend with new data sources, AI models, and application features.
+**Document Status:** Baseline  
+**Architecture:** Modular Monolith with Background Processing  
+**Backend:** Python / FastAPI  
+**Frontend:** React  
+**Structured Database:** MySQL  
+**Cache / Job Queue:** Redis  
+**Vector Database:** Qdrant  
+**AI Orchestration:** LangGraph  
+**Primary External Data Source:** Steam Games Dataset
 
 ---
 
-# 2. Problem Statement
+## 1. Purpose
 
-The gaming ecosystem contains a large amount of information about games, including metadata, player reviews, ratings, genres, pricing information, popularity metrics, and community feedback.
+This document specifies the functional and non-functional requirements for Arcademia AI.
 
-Finding meaningful insights from this information is difficult because traditional search systems mainly depend on exact keyword matching.
+It defines the system scope, users, behavior, external interfaces, data requirements, business capabilities, high-level architecture, security, reliability, testing, and acceptance criteria.
 
-For example, a user may ask:
-
-```
-Suggest games similar to Elden Ring but with a stronger story.
-
-Why do players complain about Cyberpunk 2077?
-
-Compare Witcher 3 and Skyrim based on player experience.
-```
-
-These questions require understanding the meaning and context behind the query instead of only matching keywords.
-
-Arcademia AI addresses this problem by combining structured data processing, NLP pipelines, transformer-based models, vector search, RAG workflows, and AI agents.
-
-The platform is designed to analyze games and player opinions, retrieve relevant information, and generate useful responses using available data instead of only displaying stored information.
+The document is the baseline for implementation and verification.
 
 ---
 
-# 3. Project Overview
+## 2. System Scope
 
-Arcademia AI is an intelligent game analysis platform that processes Steam game information and player reviews to provide AI-powered insights.
+Arcademia AI is a web application for game discovery and game-experience analysis.
 
-The system works with two different types of data:
+The system uses structured game data, player reviews, derived review intelligence, semantic retrieval, deterministic ranking, and AI investigation.
 
-1. Structured data containing game information such as title, genre, developers, pricing, ratings, and popularity metrics.
+The system shall provide useful discovery capabilities without requiring an external LLM for normal operation.
 
-2. Unstructured text data containing player reviews, opinions, feedback, and discussions about games.
+### 2.1 In Scope
 
-The platform provides the following capabilities:
+- Game catalog and search.
+- Player review storage and analysis.
+- Experience Profiles.
+- Deterministic similarity, matching, ranking, and novelty.
+- Game comparison.
+- Experience Blends using 2 to 5 games.
+- Discovery Paths and the Discovery Board.
+- User accounts and authentication.
+- My Library and My Preferences.
+- Semantic search and vector retrieval.
+- Grounded AI question answering.
+- Bounded LangGraph agent workflows.
+- Controlled MCP integration.
+- Background data processing and reprocessing.
+- Testing, monitoring, evaluation, and deployment support.
 
-- Natural language game search
-- Semantic game discovery
-- Game recommendation
-- Player review analysis
-- Sentiment and topic analysis
-- Game comparison
-- AI-powered question answering
+### 2.2 Out of Scope
 
-The system follows a layered architecture where application logic, AI workflows, data processing, and storage responsibilities remain separated.
-
-This allows individual components such as AI models, databases, and retrieval systems to be changed or improved without affecting the complete application.
+- Game purchasing or payment processing.
+- Game launching or game distribution.
+- Steam account integration in the initial release.
+- Real-time gameplay telemetry collection.
+- Public messaging or a general social network.
+- A developer analytics platform as a primary capability.
+- Foundation-model training from scratch.
+- Multi-agent execution as the default architecture.
+- Independent deployment of every business capability.
 
 ---
 
-# 4. Data Source
+## 3. System Objectives
 
-Arcademia AI uses the Steam Games Dataset available from Kaggle.
+The system shall:
 
-The dataset contains metadata for more than 136,000 Steam games collected from public sources through an automated data pipeline.
-
-The dataset contains two main files:
-
-- `steam_games.csv`
-- `steam_games_reviews.csv`
-
-The dataset acts as the initial data source for the ingestion pipeline. The application does not directly use CSV files during runtime. Data is processed, cleaned, and stored in application-managed storage systems.
+1. Help users find games beyond exact keyword matching.
+2. Represent supported game experience characteristics in an explainable form.
+3. Let users actively explore relationships between games.
+4. Keep core discovery deterministic, testable, and available without an LLM.
+5. Use player reviews as evidence for supported insights.
+6. Provide grounded AI investigation for questions that benefit from reasoning and synthesis.
+7. Keep business capabilities separated inside one modular monolith.
+8. Support persistent user data without mixing it with canonical game data.
+9. Remain practical for a small engineering team to build and operate.
 
 ---
 
-## 4.1 steam_games.csv
+## 4. Users and Roles
 
-This file contains structured information about Steam games.
+### 4.1 Visitor
 
-Important fields include:
+An unauthenticated user.
 
-| Column | Description |
+A visitor shall be able to browse and search games, compare games, create temporary Blends, and use supported public discovery features.
+
+A visitor shall not access private user data.
+
+### 4.2 Registered User
+
+A registered user shall additionally be able to save games, Blends, comparisons, Discovery Paths, and preferences, and access My Library and My Preferences.
+
+### 4.3 Operator
+
+An authorized system maintainer who may run ingestion, inspect processing status, retry failed jobs, rebuild indexes, and inspect operational health.
+
+---
+
+## 5. System Terminology
+
+The following terms form the common user and domain vocabulary.
+
+| User-facing term | Domain meaning |
 |---|---|
-| app_id | Unique Steam application identifier |
-| name | Game title |
-| release_date | Game release date |
-| price | Current game price |
-| estimated_owners | Estimated ownership range |
-| developers | Game developers |
-| publishers | Game publishers |
-| genres | Game genres |
-| categories | Steam categories such as single-player and co-op |
-| positive | Number of positive reviews |
-| negative | Number of negative reviews |
-| recommendations | Number of user recommendations |
-| average_playtime_forever | Average total playtime |
-| steam_store_available | Indicates Steam Store data availability |
-| steam_spy_available | Indicates SteamSpy data availability |
+| **Game** | Canonical game record |
+| **Reviews** | Player-written reviews and related analysis |
+| **Experience Profile** | Structured representation of supported game characteristics |
+| **Discover** | Game search and discovery |
+| **Compare** | Comparison of games and supporting evidence |
+| **Blend** | A target experience created from 2 to 5 games |
+| **Discovery Path** | A sequence of discovery actions and resulting states |
+| **Discovery Board** | Visual view of a Discovery Path and its branches |
+| **Match** | Compatibility between a game and a target |
+| **My Preferences** | A user's structured preference profile |
+| **Try Something New** | Novelty-aware discovery outside familiar preferences |
+| **My Library** | User-owned saved games and discoveries |
+| **Deep Dive** | AI-assisted multi-step investigation |
+| **Evidence** | Source data supporting an insight or AI response |
 
-This data is processed and stored in MySQL for structured queries, filtering, recommendations, and analytics.
+Technical terms such as embedding, vector search, RAG, LangGraph, and MCP describe implementation mechanisms. They are not alternative names for business concepts.
+
+The same business concept uses the same term across requirements, domain models, APIs, code, database models, and user-facing flows. A term is not renamed when it crosses a technical boundary unless its meaning changes. This is the project's ubiquitous language. [2]
 
 ---
 
-## 4.2 steam_games_reviews.csv
+## 6. Functional Requirements
 
-This file contains player review information.
+### 6.1 Identity and Authentication
 
-Each record contains:
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-001 | The system shall allow a user to create an account using a supported authentication method. | Must |
+| FR-002 | The system shall authenticate users before granting access to private data. | Must |
+| FR-003 | The system shall allow authenticated users to log out. | Must |
+| FR-004 | The system should support account recovery. | Should |
+| FR-005 | The system shall authorize access to resources by authenticated user identity. | Must |
+| FR-006 | The system shall support anonymous discovery without mandatory registration. | Must |
 
-| Column | Description |
+### 6.2 Game Catalog
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-007 | The system shall store normalized game metadata in MySQL. | Must |
+| FR-008 | The system shall support structured game search. | Must |
+| FR-009 | The system shall support filtering using supported game attributes. | Must |
+| FR-010 | The system shall return paginated game results. | Must |
+| FR-011 | The system shall provide a game details view. | Must |
+| FR-012 | The system shall preserve the external source identifier for imported games. | Must |
+
+### 6.3 Reviews
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-013 | The system shall store reviews associated with games. | Must |
+| FR-014 | The system shall process review text through background jobs. | Must |
+| FR-015 | The system shall store versioned review-analysis artifacts. | Must |
+| FR-016 | The system shall support review-level evidence retrieval. | Must |
+| FR-017 | The system shall support game-level aggregation of review signals. | Must |
+| FR-018 | The system should show the freshness of derived review insights. | Should |
+
+### 6.4 Experience Profiles
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-019 | The system shall maintain an Experience Profile for supported games. | Must |
+| FR-020 | Experience Profile values shall be derived from supported structured and review signals. | Must |
+| FR-021 | The system shall record the processing version used for derived experience data. | Must |
+| FR-022 | The system shall expose Experience Profile data through an application interface. | Must |
+| FR-023 | The system shall avoid exposing unsupported experience dimensions when evidence quality is insufficient. | Must |
+
+### 6.5 Discovery and Search
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-024 | The system shall provide deterministic game discovery. | Must |
+| FR-025 | The system shall support semantic search using natural-language queries. | Must |
+| FR-026 | The system should support hybrid retrieval when exact terms and semantic meaning both matter. | Should |
+| FR-027 | The system shall separate candidate generation from final ranking. | Must |
+| FR-028 | The system shall rank candidates using explicit scoring rules or configured ranking algorithms. | Must |
+| FR-029 | The system shall support configurable result counts. | Must |
+| FR-030 | The system shall support diversity-aware ranking. | Must |
+| FR-031 | The system shall provide a **Try Something New** discovery mode. | Must |
+
+### 6.6 Compare
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-032 | The system shall allow users to compare supported games. | Must |
+| FR-033 | A comparison shall contain structured differences between the selected games. | Must |
+| FR-034 | A comparison should include relevant review evidence where available. | Should |
+| FR-035 | The system shall report differences and trade-offs rather than an objective overall winner. | Must |
+
+### 6.7 Blend
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-036 | The system shall allow selection of 2 to 5 games for a Blend. | Must |
+| FR-037 | The system shall calculate a target experience from the selected games. | Must |
+| FR-038 | The system shall support user-controlled experience transformations. | Must |
+| FR-039 | Transformations shall affect only supported experience dimensions. | Must |
+| FR-040 | The system shall return ranked games matching the resulting target. | Must |
+| FR-041 | The system shall allow a user to continue discovery from Blend results. | Must |
+
+### 6.8 Discovery Path and Discovery Board
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-042 | The system shall record important discovery actions within a Discovery Path. | Must |
+| FR-043 | The system shall support branching from an earlier discovery state. | Must |
+| FR-044 | The system shall allow authenticated users to save a Discovery Path. | Must |
+| FR-045 | The system shall allow authenticated users to reopen a saved Discovery Path. | Must |
+| FR-046 | The system shall provide a Discovery Board for an active or saved path. | Must |
+| FR-047 | The system shall allow users to return to an earlier discovery state. | Must |
+| FR-048 | The system should support sharing of permitted Discovery Paths. | Should |
+
+### 6.9 Personalization and My Preferences
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-049 | The system shall maintain a structured My Preferences profile for authenticated users. | Must |
+| FR-050 | The system shall support explicit preference signals. | Must |
+| FR-051 | The system shall support permitted behavioral preference signals. | Must |
+| FR-052 | The system shall distinguish explicit preferences from inferred preferences. | Must |
+| FR-053 | Explicit user choices shall be able to override inferred preferences where appropriate. | Must |
+| FR-054 | The system shall use My Preferences in supported personalized discovery operations. | Must |
+
+### 6.10 My Library
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-055 | The system shall allow authenticated users to save games. | Must |
+| FR-056 | The system shall allow users to remove saved items. | Must |
+| FR-057 | The system shall store saved Blends and Discovery Paths independently of canonical game data. | Must |
+| FR-058 | The system shall provide saved items through My Library. | Must |
+
+### 6.11 Deep Dive and AI Investigation
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-059 | The system shall support grounded answers to supported open-ended game questions. | Must |
+| FR-060 | Application-specific factual AI answers shall use retrieved Arcademia data. | Must |
+| FR-061 | The system shall provide evidence references where source attribution is available. | Must |
+| FR-062 | AI workflows shall access business capabilities only through explicit tools or application interfaces. | Must |
+| FR-063 | The agent shall not access MySQL, Qdrant, shell commands, or arbitrary HTTP directly. | Must |
+| FR-064 | The system shall support bounded LangGraph workflows for dynamic multi-step investigation. | Must |
+| FR-065 | AI runs shall stop at configured step, time, and token limits where measurable. | Must |
+| FR-066 | The system shall return a controlled response when required evidence is unavailable. | Must |
+| FR-067 | The system should support selected MCP integrations without bypassing authorization. | Should |
+
+### 6.12 Data Operations
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-068 | The system shall ingest supported dataset files through a repeatable pipeline. | Must |
+| FR-069 | The pipeline shall validate required fields before canonical persistence. | Must |
+| FR-070 | Invalid records shall be isolated from valid records. | Must |
+| FR-071 | The pipeline shall be safe to rerun for the same source snapshot. | Must |
+| FR-072 | The system shall record source and processing metadata for ingestion runs. | Must |
+| FR-073 | The pipeline shall support incremental processing when changes can be identified. | Must |
+| FR-074 | Failed processing records shall be retryable or quarantinable. | Must |
+| FR-075 | The system shall update or rebuild vector indexes from authoritative and derived data. | Must |
+
+### 6.13 Operations
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-076 | The system shall expose an application health endpoint. | Must |
+| FR-077 | Authorized operators should be able to inspect background-job status. | Should |
+| FR-078 | Each incoming request shall receive a request identifier. | Must |
+| FR-079 | Each AI execution shall receive an AI run identifier. | Must |
+| FR-080 | The system shall record structured telemetry for important application, data, retrieval, and AI operations. | Must |
+
+---
+
+## 7. External Interfaces
+
+### 7.1 Web Application
+
+The React client shall provide the primary interface for visitors and registered users.
+
+Primary navigation shall use:
+
+- Discover
+- Compare
+- Blend
+- My Library
+- My Preferences
+- Deep Dive
+
+### 7.2 REST API
+
+The web client shall communicate with the backend through REST APIs.
+
+The API shall use:
+
+- HTTPS in hosted environments;
+- JSON requests and responses;
+- request validation;
+- pagination for large collections;
+- authentication for protected resources;
+- authorization for user-owned resources;
+- structured errors;
+- request identifiers.
+
+### 7.3 Dataset Interface
+
+The ingestion pipeline shall accept the supported Steam dataset files.
+
+CSV/source files shall not be read directly by normal user requests.
+
+### 7.4 Authentication Interface
+
+Authentication shall be exposed to the application through an identity abstraction so the application is not tied to a specific provider.
+
+### 7.5 Model Interface
+
+LLM and embedding providers shall be accessed through provider adapters.
+
+### 7.6 MCP Interface
+
+When enabled, MCP shall expose only selected, authorized capabilities.
+
+---
+
+## 8. Data Requirements
+
+### 8.1 Source Data
+
+The initial source is the Steam Games Dataset maintained on Kaggle. The source is treated as external, versioned input. [3]
+
+The source may change between snapshots, therefore ingestion records the source reference and processing state.
+
+The ingestion layer preserves the source field names from the supplied dataset. The initial `steam_games.csv` fields used by Arcademia are:
+
+| Source field | Meaning in Arcademia |
 |---|---|
-| app_id | Steam application identifier |
-| name | Game title |
-| reviews | JSON document containing English user reviews |
+| `app_id` | Steam application identifier |
+| `name` | Game name |
+| `release_date` | Game release date |
+| `price` | Game price |
+| `estimated_owners` | Estimated owner range |
+| `developers` | Developer information |
+| `publishers` | Publisher information |
+| `genres` | Genre information |
+| `categories` | Category information |
+| `positive` | Positive review count |
+| `negative` | Negative review count |
+| `recommendations` | Recommendation count |
+| `average_playtime_forever` | Average lifetime playtime |
+| `steam_store_available` | Steam Store availability indicator |
+| `steam_spy_available` | Steam Spy availability indicator |
 
-The two datasets are connected using:
+The review source preserves the supplied review-file structure, including `app_id` and the review payload. Source fields are not renamed during ingestion merely for stylistic consistency. Internal derived fields are stored separately from source fields.
 
-```text
-steam_games.app_id = steam_games_reviews.app_id
-```
+### 8.2 Canonical Data
 
-The review data is processed through the NLP pipeline for:
+MySQL shall be authoritative for relational game and review data.
 
-- Sentiment analysis
-- Topic extraction
-- Entity extraction
-- Text embeddings
-- Semantic search
-- RAG-based responses
+Initial logical entities:
 
----
-
-# 5. Project Goals
-
-The main goal of Arcademia AI is to build a system that understands game information and player feedback using AI-based analysis workflows.
-
-The platform focuses on the following areas:
-
-## Game Understanding
-
-The system should understand important game characteristics such as:
-
-- Genre
-- Popularity
-- Ratings
-- Player engagement
-- Common review patterns
-- Community feedback
-
-This information is used to provide better search results and recommendations.
-
----
-
-## Player Feedback Analysis
-
-The system should process player reviews to identify common opinions, problems, and discussion topics.
-
-Examples:
-
-- Gameplay quality
-- Performance issues
-- Story experience
-- Difficulty level
-- Multiplayer experience
-
-The analysis helps summarize large volumes of player feedback into meaningful insights.
-
----
-
-## Intelligent Search and Recommendations
-
-Users should be able to search games using natural language instead of only using filters or exact game names.
-
-Example:
-
-```
-Find games with strong storytelling and exploration.
-```
-
-The system should understand the intent behind the query and retrieve relevant games using a combination of structured search and semantic search.
-
----
-
-## AI-based Question Answering
-
-The platform should answer game-related questions by retrieving relevant information from stored game data, processed reviews, and vector search results.
-
-Example:
-
-```
-
-Why do players like Hades?
-
-What are the common issues reported for this game?
-```
-
-The system uses RAG workflows and AI agents to retrieve relevant context and generate responses based on available information.
-
-# 6. Scope
-
-## 6.1 Included Scope
-
-The first version of Arcademia AI focuses on building an AI-powered game intelligence platform using the Steam Games Dataset.
-
-The system includes the following capabilities:
-
-- Loading and processing Steam dataset files through a data ingestion pipeline.
-- Cleaning and transforming raw game and review data.
-- Storing structured game information in MySQL.
-- Processing player reviews using NLP models.
-- Generating embeddings for semantic search.
-- Storing embeddings in a vector database.
-- Performing semantic game search.
-- Performing sentiment and topic analysis on player reviews.
-- Providing AI-powered game insights using RAG workflows.
-- Using LangGraph-based agent workflows for handling different types of user requests.
-- Exposing application functionality through APIs.
-
-The system is designed with separate application, intelligence, and data layers so that individual components can be improved without affecting the complete platform.
-
----
-
-## 6.2 Out of Scope
-
-The initial version of Arcademia AI does not include the following features:
-
-- Real-time Steam data synchronization.
-- User account management and authentication.
-- Multiplayer or social gaming features.
-- Game purchasing or payment-related functionality.
-- Predicting future game success or market performance.
-- Training large language models from scratch.
-- Building custom foundation models.
-
-These features can be considered future improvements after the core platform is stable.
-
----
-
-# 7. Functional Requirements
-
-## 7.1 Game Search
-
-The system should allow users to search games using both structured filters and natural language queries.
-
-Structured search can use information such as:
-
-- Game name
-- Genre
+- Game
 - Developer
-- Price
-- Ratings
-- Popularity metrics
+- Publisher
+- Genre
+- Category
+- Review
 
-Semantic search should allow users to search based on meaning rather than exact keywords.
+### 8.3 Derived Data
 
-Example:
+Derived data may include:
 
-```
-Find multiplayer survival games with positive player feedback.
-```
+- review sentiment;
+- review topics;
+- entity information where justified;
+- review embeddings;
+- Experience Profiles;
+- experience aggregates;
+- recommendation/ranking artifacts.
 
-The system should understand the user intent and retrieve relevant games using a combination of MySQL queries and vector-based search.
+Derived records shall retain source and processing-version information needed for regeneration or diagnosis.
 
----
+### 8.4 User Data
 
-## 7.2 Game Recommendation
+User data may include:
 
-The system should recommend games based on multiple factors:
+- account identity;
+- saved games;
+- favourites;
+- My Preferences;
+- explicit preferences;
+- behavioral preference signals;
+- saved comparisons;
+- saved Blends;
+- Discovery Paths;
+- sharing metadata.
 
-- Similar game characteristics
-- Genre similarity
-- Player feedback
-- Review sentiment
-- Semantic similarity between games
+User data shall not modify canonical game or review records.
 
-The recommendation workflow should provide a reason behind each recommendation instead of only returning a list of game names.
+### 8.5 AI Run Data
 
-Example:
+An AI run may record:
 
-```
-Recommended:
+- run ID;
+- request ID;
+- workflow;
+- model identifier;
+- prompt version;
+- tool calls;
+- evidence identifiers;
+- token usage where available;
+- validation result;
+- termination reason.
 
-Game: The Witcher 3
-
-Reason:
-Similar open-world RPG experience with strong storytelling
-and highly positive player reviews.
-```
-
-The recommendation process should use existing data and retrieval tools before requesting an LLM response.
-
----
-
-## 7.3 Review Analysis
-
-The system should analyze player reviews to identify common opinions and patterns.
-
-The review analysis workflow should provide insights such as:
-
-- Positive aspects of a game.
-- Common complaints.
-- Frequently discussed topics.
-- Overall player sentiment.
-
-The NLP pipeline processes reviews before runtime requests to avoid unnecessary model execution during user queries.
+Raw hidden chain-of-thought shall not be stored as application data.
 
 ---
 
-## 7.4 Game Comparison
-
-Users should be able to compare two games based on available information.
-
-The comparison workflow should consider:
-
-- Game metadata.
-- Ratings.
-- Player sentiment.
-- Review topics.
-- Community feedback.
-
-Example:
-
-```
-Compare Elden Ring and Dark Souls based on gameplay,
-difficulty, and player feedback.
-```
-
-The comparison result should be generated using retrieved information rather than only LLM-generated knowledge.
-
----
-
-## 7.5 AI Question Answering
-
-Users should be able to ask game-related questions using natural language.
-
-Examples:
-
-```
-Why do players like Hades?
-
-What are the common problems reported for this game?
-```
-
-The system should:
-
-1. Understand the user intent.
-2. Select the required workflow.
-3. Retrieve relevant information using available tools.
-4. Generate a response using the LLM service.
-
-The LLM is used mainly for reasoning and response generation, while data retrieval is handled by application services and tools.
-
----
-
-# 8. Non Functional Requirements
-
-## Performance
-
-The system should provide responses within acceptable time limits.
-
-Performance is improved through:
-
-- Database indexing for structured queries.
-- Vector search for efficient semantic retrieval.
-- Pre-generated embeddings during data processing.
-- Caching frequently requested responses.
-- Avoiding unnecessary LLM calls.
-
-Heavy operations such as NLP processing and embedding generation should happen during background processing instead of during user requests.
-
----
-
-## Maintainability
-
-The system should follow clear separation of responsibilities.
-
-The major components should remain independent:
-
-- Client application.
-- Application services.
-- AI orchestration layer.
-- Tool layer.
-- NLP processing layer.
-- Database layer.
-- Vector search layer.
-
-This allows changes such as replacing an AI model, vector database, or LLM provider without affecting unrelated components.
-
----
-
-## Reliability
-
-The system should handle failures gracefully.
-
-Possible failure scenarios include:
-
-- Missing dataset values.
-- Database connection failures.
-- Vector database failures.
-- NLP processing errors.
-- LLM service failures.
-- Invalid user requests.
-
-The system should return meaningful responses and use fallback mechanisms wherever possible.
-
----
-
-## Scalability
-
-The system should support future growth in data size and functionality.
-
-The architecture should allow:
-
-- Processing additional games and reviews.
-- Adding new AI workflows.
-- Replacing AI models.
-- Adding new data sources.
-- Introducing background workers.
-- Scaling individual services independently.
-
----
-
-## Cost Efficiency
-
-Since the system uses external LLM APIs, unnecessary model calls should be avoided.
-
-The architecture reduces LLM usage by:
-
-- Using deterministic application logic where possible.
-- Using tools for data retrieval.
-- Passing only relevant retrieved information to the LLM.
-- Caching repeated responses.
-- Keeping prompts concise.
-
----
-
-# 9. System Design Approach
-
-Arcademia AI follows a layered architecture where each layer has a clear responsibility.
-
-The system is divided into the following layers:
-
-```mermaid
-flowchart TD
-    Client[Client Application<br/>React Application]
-    App[Application Layer<br/>FastAPI Services]
-    Intelligence[Intelligence Layer<br/>LangGraph + Tools + NLP + RAG]
-    Data[Data Layer<br/>MySQL + Vector Database]
-
-    Client --> App
-    App --> Intelligence
-    Intelligence --> Data
-```
-
-The purpose of this separation is to keep business logic, AI processing, and data storage independent.
-
----
-
-# 10. High Level Design (HLD)
-
-## 10.1 System Architecture
-
-```mermaid
-flowchart TD
-
-User[User]
-
-Client[Client Application]
-
-API[FastAPI Application Layer]
-
-Cache[Redis Cache]
-
-Router[Intent Router]
-
-Agent[LangGraph Agent Orchestrator]
-
-Tools[Tool Layer]
-
-MySQL[(MySQL Database)]
-
-Vector[(Vector Database)]
-
-NLP[NLP Processing Service]
-
-LLMGateway[LLM Gateway]
-
-LLM[Groq Llama / LLM Provider]
-
-Ingestion[Data Ingestion Pipeline]
-
-
-User --> Client
-
-Client --> API
-
-API --> Cache
-
-Cache --> Router
-
-Router --> Agent
-
-Agent --> Tools
-
-Tools --> MySQL
-
-Tools --> Vector
-
-Tools --> NLP
-
-Agent --> LLMGateway
-
-LLMGateway --> LLM
-
-
-Ingestion --> MySQL
-
-Ingestion --> NLP
-
-NLP --> Vector
-```
-
-## 10.2 Component Overview
-
-### Client Application
-
-The client application provides the interface through which users interact with Arcademia AI.
-
-Responsibilities:
-
-- Accept user queries.
-- Display game information.
-- Display AI-generated insights.
-- Show recommendations and comparisons.
-
-Technology:
-
-- React
-- Tailwind CSS
-
-The client application does not directly communicate with databases or AI services.
-
----
-
-### FastAPI Application Layer
-
-The FastAPI layer acts as the main entry point for application requests.
-
-Responsibilities:
-
-- Receive API requests.
-- Validate input.
-- Manage request flow.
-- Communicate with application services.
-- Return formatted responses.
-
-The application layer does not directly contain AI model logic.
-
----
-
-### Redis Cache
-
-Redis is used as an optional caching layer.
-
-Responsibilities:
-
-- Store frequently requested responses.
-- Reduce repeated AI calls.
-- Improve response time.
-
-Examples:
-
-- Popular game comparisons.
-- Common search queries.
-- Frequently requested recommendations.
-
----
-
-### Intent Router
-
-The intent router determines the type of request before starting an AI workflow.
-
-Examples:
-
-User query:
-
-```
-Suggest games similar to Skyrim.
-```
-
-Routing result:
-
-```
-Recommendation Workflow
-```
-
-User query:
-
-```
-Why do players dislike this game?
-```
-
-Routing result:
-
-```
-Review Analysis Workflow
-```
-
-The goal is to avoid unnecessary LLM calls for simple request classification.
-
----
-
-### LangGraph Agent Orchestrator
-
-The agent orchestrator manages AI workflows.
-
-Responsibilities:
-
-- Maintain workflow state.
-- Select required tools.
-- Coordinate multiple processing steps.
-- Generate final responses through the LLM gateway.
-
-Agents do not directly access databases. They interact with the system through defined tools.
-
----
-
-### Tool Layer
-
-The tool layer provides controlled access to application capabilities.
-
-Examples:
-
-- Game Search Tool.
-- Semantic Search Tool.
-- Review Analysis Tool.
-- Recommendation Tool.
-- Comparison Tool.
-
-The tool layer separates AI decision-making from data access logic.
-
----
-
-### MySQL Database
-
-MySQL stores structured application data.
-
-Examples:
-
-- Games.
-- Developers.
-- Genres.
-- Ratings.
-- Statistics.
-- Processed metadata.
-
-MySQL is used because game information contains relational data and relationships between different entities.
-
----
-
-### Vector Database
-
-The vector database stores generated embeddings.
-
-Responsibilities:
-
-- Semantic search.
-- Similarity matching.
-- Retrieval for RAG workflows.
-
-It stores information such as:
-
-- Review embeddings.
-- Game description embeddings.
-- Processed text representations.
-
----
-
-### NLP Processing Service
-
-The NLP service processes unstructured review text.
-
-Responsibilities:
-
-- Text cleaning.
-- Sentiment analysis.
-- Topic extraction.
-- Entity extraction.
-- Embedding generation.
-
-Transformer-based models are used to understand the meaning of text.
-
----
-
-### LLM Gateway
-
-The LLM gateway provides an abstraction layer between the application and external LLM providers.
-
-Responsibilities:
-
-- Manage LLM provider communication.
-- Handle retries and timeouts.
-- Track token usage.
-- Support fallback providers.
-- Control prompt construction.
-
-The gateway allows the LLM provider to be replaced without changing application logic.
-
----
-
-### Data Ingestion Pipeline
-
-The ingestion pipeline prepares raw Steam dataset files for application usage.
-
-Responsibilities:
-
-- Read dataset files.
-- Validate input data.
-- Clean inconsistent values.
-- Store structured information in MySQL.
-- Trigger NLP processing for review data.
-
-The dataset files are treated as input sources and are not used directly during runtime.
-
-# 11. System Data Flow
-
-Arcademia AI processes data through separate ingestion, intelligence, and application workflows.
-
-The system has two major flows:
-
-1. Offline data processing flow
-2. Runtime user request flow
-
-The offline flow prepares data before users interact with the application.
-
-The runtime flow handles user queries, retrieves required information, and generates responses.
-
----
-
-## 11.1 Data Processing Flow
-
-The data processing pipeline converts raw Steam dataset files into application-ready data.
-
-```mermaid
-flowchart LR
-
-Dataset[Steam Dataset]
-
-Ingestion[Data Ingestion Pipeline]
-
-Cleaning[Data Cleaning and Validation]
-
-MySQL[(MySQL Database)]
-
-NLP[NLP Processing Service]
-
-Transformer[Transformer Models]
-
-Embedding[Embedding Generation]
-
-Vector[(Vector Database)]
-
-
-Dataset --> Ingestion
-
-Ingestion --> Cleaning
-
-Cleaning --> MySQL
-
-Cleaning --> NLP
-
-NLP --> Transformer
-
-Transformer --> Embedding
-
-Embedding --> Vector
-```
-
-The pipeline performs the following operations:
-
-- Reads raw dataset files.
-- Validates and cleans data.
-- Stores structured game information in MySQL.
-- Processes review text using NLP models.
-- Generates embeddings for semantic search.
-- Stores embeddings in the vector database.
-
----
-
-## 11.2 User Request Flow
-
-The runtime request flow is designed to minimize unnecessary AI calls.
-
-The system first identifies the user intent, retrieves required information using tools, and uses the LLM only for reasoning and response generation.
-
-```mermaid
-flowchart TD
-
-User[User Query]
-
-Client[Client Application]
-
-API[FastAPI Application]
-
-Cache[Redis Cache]
-
-Router[Intent Router]
-
-Agent[LangGraph Agent Orchestrator]
-
-Tools[Tool Layer]
-
-MySQL[(MySQL Database)]
-
-Vector[(Vector Database)]
-
-LLMGateway[LLM Gateway]
-
-LLM[LLM Provider]
-
-
-User --> Client
-
-Client --> API
-
-API --> Cache
-
-Cache --> Router
-
-Router --> Agent
-
-Agent --> Tools
-
-Tools --> MySQL
-
-Tools --> Vector
-
-Agent --> LLMGateway
-
-LLMGateway --> LLM
-
-LLM --> API
-
-API --> Client
-```
-
-The request flow follows these steps:
-
-1. User sends a query through the client application.
-2. FastAPI receives and validates the request.
-3. Cache is checked for frequently requested responses.
-4. Intent router identifies the required workflow.
-5. LangGraph orchestrator selects required tools.
-6. Tools retrieve information from MySQL, vector database, or NLP services.
-7. Relevant context is sent through the LLM Gateway.
-8. LLM generates the final response.
-
----
-
-# 12. Data Architecture
-
-Arcademia AI works with two major types of data:
-
-- Structured data
-- Unstructured text data
-
-Each data type has different storage and processing requirements.
-
-Structured game information is stored in MySQL because it contains relationships between entities such as games, developers, genres, ratings, and statistics.
-
-Unstructured review text is processed using NLP models. The generated embeddings are stored in a vector database for semantic search and RAG workflows.
-
-The overall data architecture is:
-
-```mermaid
-flowchart TD
-
-Dataset[Steam Dataset]
-
-Ingestion[Data Ingestion Pipeline]
-
-Cleaning[Data Cleaning]
-
-MySQL[(MySQL Database)]
-
-ReviewProcessing[Review Processing]
-
-NLP[NLP Processing Service]
-
-Embedding[Embedding Service]
-
-VectorDB[(Vector Database)]
-
-
-Dataset --> Ingestion
-
-Ingestion --> Cleaning
-
-Cleaning --> MySQL
-
-Cleaning --> ReviewProcessing
-
-ReviewProcessing --> NLP
-
-NLP --> Embedding
-
-Embedding --> VectorDB
-```
-
----
-
-## 12.1 Structured Data Storage
-
-Structured data is stored in MySQL.
-
-Examples:
-
-- Game information
-- Developers
-- Genres
-- Ratings
-- Price information
-- Player statistics
-- Processed analysis results
-
-MySQL provides:
-
-- Relational data management
-- Indexing support
-- Consistent data storage
-- Efficient structured queries
-
----
-
-## 12.2 Unstructured Data Storage
-
-Review text contains opinions and experiences that cannot be represented effectively using normal database queries.
-
-The NLP pipeline converts review text into meaningful representations.
-
-Processed information includes:
-
-- Sentiment information
-- Extracted topics
-- Text embeddings
-
-Embeddings are stored in the vector database for similarity search.
-
----
-
-# 13. Data Ingestion Pipeline
-
-The data ingestion pipeline is responsible for converting raw Steam dataset files into application-ready data.
-
-The ingestion pipeline runs separately from the application runtime so that data processing does not affect user requests.
-
-The pipeline performs:
-
-- Dataset loading.
-- Data validation.
-- Data cleaning.
-- Data transformation.
-- MySQL storage.
-- Review processing trigger.
-
----
-
-## 13.1 Data Processing Flow
-
-```mermaid
-flowchart TD
-
-Raw[Raw Dataset Files]
-Validation[Data Validation]
-Cleaning[Data Cleaning]
-Structured[Structured Data]
-ReviewData[Review Data]
-MySQL[(MySQL Storage)]
-NLP[NLP Processing]
-Embedding[Embedding Generation]
-Vector[(Vector Database)]
-
-Raw --> Validation
-Validation --> Cleaning
-Cleaning --> Structured
-Cleaning --> ReviewData
-Structured --> MySQL
-ReviewData --> NLP
-NLP --> Embedding
-Embedding --> Vector
-```
-
----
-
-## 13.2 Handling Data Quality Issues
-
-Real-world datasets may contain incomplete or inconsistent records.
-
-Possible issues:
-
-- Missing game information
-- Empty reviews
-- Duplicate records
-- Invalid dates
-- Incorrect formatting
-
-The ingestion pipeline handles these cases by:
-
-- Validating required fields before processing.
-- Removing duplicate records.
-- Storing missing optional values as NULL.
-- Logging failed records.
-- Continuing processing for valid records.
-
-A single invalid record should not stop the complete ingestion process.
-
----
-
-## 13.3 Data Processing Status Tracking
-
-Long-running processing tasks should maintain execution status.
-
-Example:
-
-```
-PENDING
-PROCESSING
-COMPLETED
-FAILED
-```
-
-This allows failed operations to be retried without restarting the complete pipeline.
-
----
-
-# 14. MySQL Database Design
-
-MySQL stores structured information required by Arcademia AI.
-
-The database follows a relational design because games have relationships with developers, genres, and reviews.
-
-The database is responsible only for structured information. Semantic search and similarity matching are handled by the vector database.
-
----
-
-## 14.1 Entity Relationship Overview
+## 9. Logical Data Model
 
 ```mermaid
 erDiagram
+    GAME ||--o{ REVIEW : has
+    GAME ||--o{ GAME_DEVELOPER : has
+    DEVELOPER ||--o{ GAME_DEVELOPER : develops
+    GAME ||--o{ GAME_GENRE : has
+    GENRE ||--o{ GAME_GENRE : classifies
+    GAME ||--o{ GAME_CATEGORY : has
+    CATEGORY ||--o{ GAME_CATEGORY : classifies
 
-GAME {
-    bigint id PK
-    bigint app_id
-    varchar name
-    date release_date
-    decimal price
-    int average_playtime
-    int positive_reviews
-    int negative_reviews
-}
+    GAME {
+        bigint id PK
+        bigint app_id UK
+        varchar name
+        varchar release_date
+        decimal price
+        varchar estimated_owners
+        text developers
+        text publishers
+        text genres
+        text categories
+        int positive
+        int negative
+        int recommendations
+        int average_playtime_forever
+        boolean steam_store_available
+        boolean steam_spy_available
+        varchar source_version
+        datetime created_at
+        datetime updated_at
+    }
 
-DEVELOPER {
-    bigint id PK
-    varchar name
-}
+    REVIEW {
+        bigint id PK
+        bigint game_id FK
+        text review_text
+        varchar language
+        datetime source_created_at
+        varchar processing_version
+        datetime created_at
+    }
 
-GENRE {
-    bigint id PK
-    varchar name
-}
+    DEVELOPER {
+        bigint id PK
+        varchar name UK
+    }
 
-REVIEW {
-    bigint id PK
-    bigint game_id FK
-    text review_text
-    float sentiment_score
-    varchar sentiment_label
-}
+    GENRE {
+        bigint id PK
+        varchar name UK
+    }
 
-GAME_DEVELOPER {
-    bigint game_id FK
-    bigint developer_id FK
-}
+    CATEGORY {
+        bigint id PK
+        varchar name UK
+    }
 
-GAME_GENRE {
-    bigint game_id FK
-    bigint genre_id FK
-}
+    GAME_DEVELOPER {
+        bigint game_id FK
+        bigint developer_id FK
+    }
 
+    GAME_GENRE {
+        bigint game_id FK
+        bigint genre_id FK
+    }
 
-GAME ||--o{ REVIEW : contains
-
-GAME ||--o{ GAME_DEVELOPER : has
-
-DEVELOPER ||--o{ GAME_DEVELOPER : develops
-
-GAME ||--o{ GAME_GENRE : belongs
-
-GENRE ||--o{ GAME_GENRE : contains
+    GAME_CATEGORY {
+        bigint game_id FK
+        bigint category_id FK
+    }
 ```
+
+The physical schema shall be finalized from verified source fields and measured query patterns.
 
 ---
 
-## 14.2 Game Table
+## 10. Business Capability Boundaries
 
-Stores basic information about games.
+Arcademia shall use business capabilities as its main application module boundaries.
 
-**Game**
+### 10.1 Game Catalog
 
-- id
-- app_id
-- name
-- release_date
-- price
-- average_playtime
-- positive_reviews
-- negative_reviews
-- recommendations
-- created_at
-- updated_at
+Owns canonical game information and structured game search.
 
-Responsibilities:
+### 10.2 Player Feedback
 
-- Store game metadata.
-- Support structured search.
-- Provide information for recommendations and comparisons.
+Owns reviews and review-derived intelligence.
 
----
+### 10.3 Experience Intelligence
 
-## 14.3 Developer Table
+Owns Experience Profiles and deterministic experience calculations.
 
-Stores developer information.
+### 10.4 Discovery
 
-**Developer**
+Owns candidate generation, ranking, similarity, novelty, Blends, Discovery Paths, and Discovery Board state.
 
-- id
-- name
+### 10.5 Personalization
 
-Keeping developers separate avoids duplicate storage when multiple games belong to the same developer.
+Owns My Preferences and user preference signals.
 
----
+### 10.6 Identity and Library
 
-## 14.4 Genre Table
+Owns application identity and saved user content.
 
-Stores game genre information.
+### 10.7 AI Investigation
 
-**Genre**
+Owns AI workflows, retrieval orchestration, tool use, AI run state, and grounded response assembly.
 
-- id
-- name
+### 10.8 Data Operations
 
-A separate genre table supports many-to-many relationships.
+Owns source ingestion, validation, processing jobs, manifests, and reprocessing.
 
-Example:
-
-Game:
-
-```
-The Witcher 3
-```
-
-Genres:
-
-- RPG
-- Adventure
-- Open World
+These are in-process modules inside one application. They are not separately deployed services.
 
 ---
 
-## 14.5 Review Table
+## 11. Module Dependency Rules
 
-Stores processed review information.
-
-**Review**
-
-- id
-- game_id
-- review_text
-- sentiment_score
-- sentiment_label
-- created_at
-
-The review table stores processed analysis results so the NLP pipeline does not need to execute repeatedly for the same review.
+1. A module may call another module only through its public application interface.
+2. A module shall not access another module's repository or private database model.
+3. A module shall not execute SQL against another module's private tables.
+4. Domain logic shall not depend directly on FastAPI, Qdrant, Redis, or an LLM SDK.
+5. Generic technical utilities may be shared when they contain no business rules.
+6. In-process calls are preferred for request-critical operations requiring immediate consistency.
+7. Background jobs may use the same modules but are separate runtime processes where needed.
 
 ---
 
-## 14.6 Database Indexing Strategy
+## 12. High-Level Architecture
 
-Indexes are created for frequently accessed fields.
+### 12.1 System Context
 
-Examples:
+```mermaid
+flowchart LR
+    Visitor[Visitor]
+    User[Registered User]
+    Operator[Operator]
+    Dataset[Steam Dataset]
+    Models[LLM / Embedding Providers]
+    Arcademia[Arcademia AI]
 
-Game search:
-
-```sql
-INDEX(name)
+    Visitor --> Arcademia
+    User --> Arcademia
+    Operator --> Arcademia
+    Dataset --> Arcademia
+    Arcademia --> Models
 ```
 
-Finding reviews for a game:
+### 12.2 Logical Architecture
 
-```sql
-INDEX(game_id)
+```mermaid
+flowchart TB
+    Web[React Web Application]
+    API[FastAPI API]
+
+    subgraph App[Arcademia Modular Monolith]
+        Identity[Identity and Library]
+        Catalog[Game Catalog]
+        Feedback[Player Feedback]
+        Experience[Experience Intelligence]
+        Discovery[Discovery]
+        Personalization[Personalization]
+        AI[AI Investigation]
+        DataOps[Data Operations]
+    end
+
+    Web --> API
+    API --> Identity
+    API --> Catalog
+    API --> Feedback
+    API --> Experience
+    API --> Discovery
+    API --> Personalization
+    API --> AI
+
+    Discovery --> Catalog
+    Discovery --> Feedback
+    Discovery --> Experience
+    Discovery --> Personalization
+
+    AI --> Catalog
+    AI --> Feedback
+    AI --> Experience
+    AI --> Discovery
+    AI --> Personalization
+
+    DataOps --> Catalog
+    DataOps --> Feedback
+    DataOps --> Experience
+
+    Catalog --> MySQL[(MySQL)]
+    Feedback --> MySQL
+    Experience --> MySQL
+    Discovery --> MySQL
+    Personalization --> MySQL
+    Identity --> MySQL
+    AI --> MySQL
+
+    Feedback --> Qdrant[(Qdrant)]
+    Experience --> Qdrant
+    AI --> Qdrant
+    API --> Redis[(Redis)]
 ```
 
-Sorting by popularity:
+Internal business modules communicate in-process. Network boundaries are reserved for the client and external infrastructure.
 
-```sql
-INDEX(recommendations)
+### 12.3 Runtime Topology
+
+```mermaid
+flowchart LR
+    Browser[Browser] --> Web[React]
+    Web --> API[FastAPI Process]
+
+    subgraph Runtime[Arcademia Runtime]
+        API
+        Worker[Background Worker]
+    end
+
+    API --> DB[(MySQL)]
+    API --> Cache[(Redis)]
+    API --> Vector[(Qdrant)]
+    API --> LLM[LLM Provider]
+
+    Worker --> DB
+    Worker --> Cache
+    Worker --> Vector
+    Worker --> Models[NLP / Embedding Models]
+    Worker --> Source[Dataset Snapshot]
 ```
 
-Indexes improve query performance as the dataset size increases.
+The worker is a runtime role, not a business service boundary.
 
 ---
 
-# 15. NLP Pipeline Design
+## 13. Experience and Discovery Requirements
 
-The NLP pipeline converts unstructured review text into useful information.
+### 13.1 Experience Profile
 
-The system does not train transformer models from scratch.
+An Experience Profile shall contain only dimensions supported by reliable data and evaluation.
 
-Instead, it uses pretrained transformer models and focuses on applying them efficiently.
+Potential dimensions include:
 
-The NLP pipeline contains:
+- story;
+- character depth;
+- exploration;
+- combat;
+- difficulty;
+- progression;
+- grind;
+- freedom;
+- player choice;
+- replayability;
+- session commitment;
+- multiplayer dependence.
 
-- Text preprocessing.
-- Sentiment analysis.
-- Topic extraction.
-- Entity extraction.
-- Embedding generation.
+The final dimension set shall be based on data quality and evaluation results.
 
----
+### 13.2 Match Calculation
 
-## 15.1 Text Processing
+A Match shall be computed from explicit experience signals and user constraints.
 
-Before sending reviews to NLP models, the text is cleaned and normalized.
+The underlying score shall be deterministic and independently testable.
 
-Processing steps include:
+### 13.3 Ranking
 
-- Removing unnecessary symbols.
-- Removing duplicate spaces.
-- Handling empty reviews.
-- Normalizing text format.
-
-Example:
-
-Before:
-
-```
-THIS GAME IS AMAZING!!!! 100% recommended!!!
-```
-
-After:
-
-```
-this game is amazing recommended
-```
-
----
-
-## 15.2 Sentiment Analysis
-
-Sentiment analysis identifies player opinions from reviews.
-
-Example:
-
-Review:
-
-```
-The gameplay is amazing but the game crashes frequently.
-```
-
-Possible analysis:
-
-- Positive: Gameplay
-- Negative: Performance issues
-- Overall: Mixed sentiment
-
-A transformer-based classification model is used for sentiment detection.
-
-The processed sentiment result is stored so repeated analysis is avoided.
-
----
-
-## 15.3 Topic Extraction
-
-Topic extraction identifies frequently discussed areas in player reviews.
-
-Example reviews:
-
-- The story is excellent.
-- Combat feels satisfying.
-- The game performance is poor.
-
-Extracted topics:
-
-- Story
-- Combat
-- Performance
-
-These topics help summarize player discussions.
-
----
-
-## 15.4 Named Entity Extraction
-
-Named Entity Recognition identifies important entities from review text.
-
-Example:
-
-Review:
-
-```
-Cyberpunk 2077 has amazing visuals but poor optimization.
-```
-
-Extracted information:
-
-- Game: Cyberpunk 2077
-- Topic: Optimization
-
-This information can improve search, filtering, and analysis workflows.
-
-# 16. Transformer Model Usage
-
-Arcademia AI uses transformer-based models to understand and process unstructured text data such as player reviews.
-
-Traditional keyword-based approaches cannot understand the context and meaning behind sentences. Transformer models help the system understand relationships between words and generate meaningful representations of text.
-
-The system uses pretrained transformer models for:
-
-- Text classification.
-- Sentiment analysis.
-- Text embeddings.
-- Semantic similarity search.
-
-The initial version does not train transformer models from scratch. It uses existing pretrained models and focuses on efficient application of these models within the AI pipeline.
-
----
-
-## 16.1 Why Transformers?
-
-Traditional keyword-based methods treat different phrases as unrelated even when they express similar meanings.
-
-Example:
-
-```
-"great story"
-
-"excellent narrative"
-```
-
-A keyword-based system may consider these as different phrases.
-
-Transformer models understand that both sentences represent a similar idea.
-
-This improves:
-
-- Search relevance.
-- Recommendation quality.
-- Review understanding.
-- Semantic similarity matching.
-
----
-
-## 16.2 Embedding Generation
-
-Embeddings convert text information into numerical vectors that represent the meaning of the text.
-
-Example:
-
-Input text:
+Ranking may consider:
 
 ```text
-The game has an amazing story.
+Experience Match
++ User Preference Match
++ Required Constraints
++ Diversity
++ Novelty
 ```
 
-Generated embedding:
+Weights shall be configurable and evaluated. No score shall be presented as an objective measure of game quality.
+
+### 13.4 Blend
+
+```mermaid
+flowchart TD
+    Select[Select 2-5 Games]
+    Profiles[Load Experience Profiles]
+    Blend[Create Experience Blend]
+    Transform[Apply User Choice]
+    Candidates[Generate Candidates]
+    Rank[Rank by Match, Constraints and Diversity]
+    Results[Show Results]
+    Continue{Continue?}
+
+    Select --> Profiles --> Blend --> Transform --> Candidates --> Rank --> Results
+    Results --> Continue
+    Continue -->|Yes| Transform
+    Continue -->|No| End[Finish or Save]
+```
+
+### 13.5 Discovery Path
+
+```mermaid
+flowchart TD
+    Root[Starting Selection]
+    Action[Discovery Action]
+    Results[Ranked Results]
+    Branch{Choose Direction}
+    A[Direction A]
+    B[Direction B]
+    Save[Save Path]
+
+    Root --> Action --> Results --> Branch
+    Branch --> A --> Save
+    Branch --> B --> Save
+    Results --> Save
+```
+
+The interface shall preserve the current state and allow return to an earlier state.
+
+---
+
+## 14. Search and Retrieval
+
+### 14.1 Structured Search
+
+Structured search shall use indexed relational fields and parameterized queries.
+
+Supported filters may include:
+
+- name;
+- developer;
+- publisher;
+- genre;
+- category;
+- price;
+- release date;
+- review counts;
+- recommendations;
+- playtime.
+
+### 14.2 Semantic Search
+
+Semantic search shall:
+
+1. process the query;
+2. create a query embedding;
+3. retrieve candidate vectors;
+4. apply supported metadata filters;
+5. return ranked results with source identifiers.
+
+Similarity thresholds shall be calibrated using evaluation data.
+
+### 14.3 Hybrid Retrieval
+
+Hybrid retrieval may combine lexical and semantic retrieval where this improves search quality.
+
+It shall become the default only if evaluation supports that choice.
+
+### 14.4 Reranking
+
+Reranking is optional and shall be added only when first-stage retrieval quality is insufficient and the latency cost is acceptable.
+
+---
+
+## 15. AI Investigation Architecture
+
+### 15.1 Execution Rule
+
+The system shall choose the simplest execution pattern that satisfies the request.
 
 ```text
-[0.24, 0.71, 0.15, ....]
+Deterministic logic
+        |
+        v
+Fixed workflow
+        |
+        v
+Bounded single agent
+        |
+        v
+Multi-agent only when justified
 ```
 
-These numbers represent the semantic meaning of the sentence.
+### 15.2 AI Request Flow
 
-Texts with similar meanings produce similar vector representations.
+```mermaid
+flowchart TD
+    Query[User Question]
+    Classify[Query Classification]
+    Fixed[Fixed Workflow]
+    Agent[Bounded LangGraph Agent]
+    Tool[Controlled Tool]
+    Capability[Arcademia Business Capability]
+    Evidence[Retrieved Evidence]
+    Check[Evidence Check]
+    Generate[Grounded Generation]
+    Validate[Response Validation]
+    Answer[Answer]
+    Abstain[Controlled Uncertainty]
 
-The generated embeddings are stored in the vector database and used during semantic search and RAG retrieval.
+    Query --> Classify
+    Classify -->|fixed path| Fixed --> Generate
+    Classify -->|dynamic investigation| Agent --> Tool --> Capability --> Evidence --> Check
+    Check -->|more evidence| Agent
+    Check -->|sufficient| Generate --> Validate --> Answer
+    Check -->|insufficient| Abstain
+```
+
+### 15.3 RAG
+
+For application-specific factual questions, retrieval shall occur before generation.
+
+The context builder shall control:
+
+- evidence count;
+- source diversity;
+- duplicate removal;
+- metadata filters;
+- context size;
+- source identifiers.
+
+Retrieved content shall be treated as untrusted data and shall not override system policies.
+
+### 15.4 Tools
+
+Initial read-only tools may include:
+
+- `game_lookup`
+- `game_search`
+- `semantic_search`
+- `review_search`
+- `review_insights`
+- `recommend_games`
+- `compare_games`
+- `experience_profile`
+- `blend_games`
+
+A tool shall define a stable name, input schema, output schema, failure behavior, and authorization class.
+
+The agent shall not receive generic SQL, shell, or arbitrary HTTP tools.
+
+### 15.5 Agent State
+
+AI state may contain:
+
+- request ID;
+- run ID;
+- user query;
+- intent;
+- identified games;
+- workflow;
+- retrieved evidence identifiers;
+- tool results;
+- step count;
+- termination reason.
+
+State shall be bounded to the task.
+
+### 15.6 MCP
+
+MCP shall be treated as an interoperability layer. It shall not replace internal module boundaries or authorization rules.
 
 ---
 
-## 16.3 Embedding Pipeline
+## 16. Data Ingestion and Processing
 
-The embedding generation process happens during data processing instead of during user requests.
+### 16.1 Processing Pipeline
 
 ```mermaid
 flowchart LR
+    Source[Dataset Snapshot]
+    Manifest[Source Manifest]
+    Validate[Validate]
+    Normalize[Normalize]
+    Catalog[Game Catalog]
+    Reviews[Player Feedback]
+    Analyze[Review Analysis]
+    Embed[Embedding]
+    Experience[Experience Derivation]
+    Vector[Qdrant]
+    Verify[Verification]
 
-Review[Game Review Text]
-
-Cleaning[Text Cleaning]
-
-Model[Embedding Model]
-
-Vector[Generated Vector]
-
-Database[(Vector Database)]
-
-
-Review --> Cleaning
-
-Cleaning --> Model
-
-Model --> Vector
-
-Vector --> Database
+    Source --> Manifest --> Validate --> Normalize
+    Normalize --> Catalog
+    Normalize --> Reviews
+    Reviews --> Analyze --> Experience
+    Analyze --> Embed --> Vector
+    Catalog --> Verify
+    Reviews --> Verify
+    Experience --> Verify
+    Vector --> Verify
 ```
 
-This approach reduces runtime processing and improves response speed.
+### 16.2 Stages
 
----
+1. Discover source files and source reference.
+2. Validate structure and required fields.
+3. Normalize source records.
+4. Persist canonical game and review data.
+5. Analyze changed/new reviews.
+6. Generate embeddings for approved indexed content.
+7. Derive or update Experience Profiles.
+8. Update vector indexes.
+9. Verify processing results.
+10. Record the processing manifest.
 
-# 17. Vector Database Design
+### 16.3 Incremental Processing
 
-The vector database stores semantic representations generated from text data.
+The system shall compare stable game identifiers and suitable row hashes.
 
-It is responsible for similarity-based retrieval and supports RAG workflows.
+Where a stable review identifier is unavailable, the system shall use a suitable content fingerprint from available review fields.
 
-The vector database stores embeddings created from:
+A source snapshot change shall not automatically require full reprocessing.
 
-- Game descriptions.
-- Player reviews.
-- Extracted topics.
-- Processed text summaries.
+### 16.4 Failed Records
 
-The vector database works together with MySQL:
+Failed records shall retain:
 
-- MySQL stores structured information.
-- Vector database stores semantic information.
+- source identifier;
+- processing stage;
+- failure category;
+- processing run ID;
+- retry status.
 
----
+### 16.5 Snapshot Activation
 
-## 17.1 Semantic Search
-
-Semantic search allows users to search using meaning instead of exact keywords.
-
-Example user query:
-
-```
-Games with emotional stories and memorable characters
-```
-
-A traditional keyword search may fail if those exact words are not present.
-
-Semantic search can identify relevant content:
-
-Game A:
-
-```
-"The story creates a strong emotional connection with players."
-```
-
-Game B:
-
-```
-"Characters are deeply written and memorable."
-```
-
-The system finds these results because their meaning is similar.
+A new source snapshot shall not become the active data set until required validation checks succeed.
 
 ---
 
-## 17.2 Vector Document Structure
+## 17. Authentication, User Data, and Sharing
 
-Each vector document contains the original text, metadata, and generated embedding.
+### 17.1 Account Flow
 
-Example:
-
-**Vector Document**
-
-- id: `review_12345`
-- content: `"The story and characters are excellent."`
-- metadata:
-
-```json
-{
-  "game_id": 500,
-  "game_name": "Game Name",
-  "genre": "RPG"
-}
+```text
+Visit Arcademia
+      |
+      v
+Explore without account
+      |
+      v
+Create something worth saving
+      |
+      v
+Sign up / Log in
+      |
+      v
+My Library + My Preferences
 ```
 
-- embedding: `[0.23, 0.54, 0.89, ...]`
+### 17.2 User Data Rules
 
-Metadata helps filter search results and connect vector results with structured information stored in MySQL.
+- User data shall be separated from canonical game data.
+- Explicit preferences shall be distinguishable from inferred preferences.
+- User preferences shall be structured rather than stored as one opaque AI-generated description.
+- A user's explicit choice shall be able to override inferred behavior.
+
+### 17.3 Sharing
+
+A shared Discovery Path shall expose only information intended for public access.
+
+Private identity or private preference data shall not be exposed through a shared link.
 
 ---
 
-## 17.3 Semantic Retrieval Flow
+## 18. Security and Privacy
 
-```mermaid
-flowchart TD
+### 18.1 Authentication and Authorization
 
-Query[User Query]
+Protected resources shall require authentication.
 
-Embedding[Query Embedding]
+Authorization shall be enforced by deterministic application code.
 
-Search[Vector Similarity Search]
+The LLM shall never make the final authorization decision.
 
-Results[Relevant Documents]
+### 18.2 Untrusted Inputs
 
-Context[Retrieved Context]
+The following shall be treated as untrusted:
 
+- user prompts;
+- player review text;
+- retrieved content;
+- model-generated tool arguments;
+- external tool responses;
+- MCP content.
 
-Query --> Embedding
+### 18.3 AI Controls
 
-Embedding --> Search
+The system shall use:
 
-Search --> Results
+- strict tool schemas;
+- least-privilege tools;
+- input validation;
+- output validation;
+- prompt-injection defenses;
+- rate limits;
+- authorization outside the model.
 
-Results --> Context
-```
+### 18.4 Secrets
 
-The retrieved context is passed to the RAG workflow for response generation.
+API keys, passwords, tokens, and deployment secrets shall not be committed to source control.
 
----
+### 18.5 Privacy
 
-# 18. Retrieval-Augmented Generation (RAG) Design
+The system shall collect only data required for supported features.
 
-RAG allows Arcademia AI to generate responses based on its own dataset.
-
-Instead of depending only on the LLM's existing knowledge, the system first retrieves relevant information from the vector database and structured data sources.
-
-The RAG workflow is:
-
-```mermaid
-flowchart TD
-
-Question[User Question]
-
-Intent[Intent Identification]
-
-Retrieval[Information Retrieval]
-
-Context[Relevant Game Data]
-
-Prompt[Prompt Construction]
-
-LLMGateway[LLM Gateway]
-
-LLM[LLM Service]
-
-Answer[Final Response]
-
-
-Question --> Intent
-
-Intent --> Retrieval
-
-Retrieval --> Context
-
-Context --> Prompt
-
-Prompt --> LLMGateway
-
-LLMGateway --> LLM
-
-LLM --> Answer
-```
+Behavioral data used for personalization shall have documented purpose and retention rules.
 
 ---
 
-## 18.1 Why RAG is Used
+## 19. Reliability and Failure Handling
 
-Without RAG:
-
-```mermaid
-flowchart TD
-
-Q1[User Question]
-LLM1[LLM]
-H1[Possible Hallucination]
-
-Q1 --> LLM1
-LLM1 --> H1
-```
-
-The LLM may generate information that is not based on the application's data.
-
-With RAG:
-
-```mermaid
-flowchart TD
-
-Q2[User Question]
-Info[Relevant Game Information]
-R2[LLM Response]
-
-Q2 --> Info
-Info --> R2
-```
-
-The response is generated using retrieved information from Arcademia AI's own data sources.
-
----
-
-## 18.2 RAG Optimization
-
-The system avoids sending unnecessary information to the LLM.
-
-The retrieval process follows:
-
-```mermaid
-flowchart TD
-
-Query[User Query]
-Search[Vector Search]
-TopDocs[Top Relevant Documents]
-Filter[Context Filtering]
-Response[LLM Response]
-
-Query --> Search
-Search --> TopDocs
-TopDocs --> Filter
-Filter --> Response
-```
-
-This reduces:
-
-- Token consumption.
-- Response latency.
-- Unnecessary model calls.
-
----
-
-# 19. Agent Architecture
-
-Arcademia AI uses agent-based workflows to handle different types of user requests.
-
-Instead of using one large AI function, the system separates responsibilities into different workflows.
-
-The agent workflows are managed using LangGraph.
-
-Each workflow has:
-
-- A defined purpose.
-- Required tools.
-- Controlled data access.
-- Clear execution steps.
-
----
-
-## 19.1 Agent Workflow Architecture
-
-```mermaid
-flowchart TD
-
-User[User Query]
-
-Router[Intent Router]
-
-Orchestrator[LangGraph Agent Orchestrator]
-
-Recommendation[Recommendation Workflow]
-
-Review[Review Analysis Workflow]
-
-Comparison[Comparison Workflow]
-
-Tools[Tool Layer]
-
-LLMGateway[LLM Gateway]
-
-LLM[LLM Service]
-
-
-User --> Router
-
-Router --> Orchestrator
-
-Orchestrator --> Recommendation
-
-Orchestrator --> Review
-
-Orchestrator --> Comparison
-
-
-Recommendation --> Tools
-
-Review --> Tools
-
-Comparison --> Tools
-
-
-Orchestrator --> LLMGateway
-
-LLMGateway --> LLM
-```
-
-The agent orchestrator decides which workflow should handle the request.
-
-Agents do not directly access databases or external services.
-
-They interact through the tool layer.
-
----
-
-## 19.2 Intent Router
-
-The intent router identifies the type of user request before starting an AI workflow.
-
-Examples:
-
-User query:
-
-```
-Suggest games similar to Skyrim.
-```
-
-Routing result:
-
-```
-Recommendation Workflow
-```
-
-User query:
-
-```
-Why do players dislike this game?
-```
-
-Routing result:
-
-```
-Review Analysis Workflow
-```
-
-The router reduces unnecessary LLM usage by avoiding model calls for simple request classification.
-
----
-
-## 19.3 Recommendation Workflow
-
-The recommendation workflow finds relevant games based on:
-
-- Game metadata.
-- Genre similarity.
-- Semantic similarity.
-- Player feedback.
-- Review patterns.
-
-The workflow uses tools to retrieve candidate games and uses the LLM only to explain the recommendation.
-
-Example:
-
-```
-Recommended:
-
-The Witcher 3
-
-Reason:
-
-Similar open-world RPG structure,
-strong storytelling, and positive player feedback.
-```
-
----
-
-## 19.4 Review Analysis Workflow
-
-The review analysis workflow processes player feedback.
-
-Responsibilities:
-
-- Retrieve relevant reviews.
-- Analyze sentiment information.
-- Identify common topics.
-- Summarize player opinions.
-
-Example:
-
-Players like:
-
-- Story
-- Exploration
-
-Players dislike:
-
-- Performance issues
-- Bugs
-
----
-
-## 19.5 Comparison Workflow
-
-The comparison workflow compares games using available information.
-
-It considers:
-
-- Game metadata.
-- Ratings.
-- Review sentiment.
-- Player feedback.
-- Semantic review insights.
-
-Example:
-
-```
-Compare Elden Ring and Dark Souls.
-```
-
-The workflow retrieves relevant information and generates a structured comparison.
-
----
-
-## 19.6 Tool Calling Design
-
-Agents do not directly communicate with databases.
-
-All external operations are performed through tools.
-
-Example:
-
-```mermaid
-flowchart LR
-
-Agent[AI Agent]
-
-Tools[Tool Layer]
-
-Services[Application Services]
-
-Data[(MySQL + Vector Database)]
-
-
-Agent --> Tools
-
-Tools --> Services
-
-Services --> Data
-```
-
-Available tools include:
-
-- Game Search Tool.
-- Semantic Search Tool.
-- Review Analysis Tool.
-- Recommendation Tool.
-- Comparison Tool.
-
-This keeps AI workflows independent from storage implementation details.
-
----
-
-# 20. Backend Low Level Design (LLD)
-
-The backend follows a layered architecture where each component has a clear responsibility.
-
-The repository structure is organized based on system responsibilities rather than technical frameworks.
-
-The structure is:
-
-```
-arcademia-ai
-├── application
-│   ├── api
-│   ├── services
-│   ├── domain
-│   └── configuration
-│
-├── intelligence
-│   ├── agents
-│   ├── tools
-│   ├── rag
-│   ├── embeddings
-│   ├── models
-│   └── prompts
-│
-├── data-platform
-│   ├── ingestion
-│   ├── processing
-│   ├── migrations
-│   └── schemas
-│
-├── infrastructure
-│   ├── docker
-│   └── deployment
-│
-├── tests
-│
-└── docs
-```
-
----
-
-## 20.1 Application Layer
-
-The application layer handles normal application logic.
-
-Responsibilities:
-
-- API request handling.
-- Business workflows.
-- Validation.
-- Communication between components.
-
-It does not contain AI model implementation.
-
----
-
-## 20.2 API Layer
-
-The API layer handles HTTP communication.
-
-Example:
-
-```
-POST /api/ai/query
-```
-
-Responsibilities:
-
-- Receive requests.
-- Validate input.
-- Return responses.
-- Handle API-level errors.
-
----
-
-## 20.3 Service Layer
-
-The service layer contains application logic.
-
-Responsibilities:
-
-- Coordinate workflows.
-- Process business operations.
-- Communicate with data access components.
-
-Examples:
-
-- Game search service.
-- Recommendation service.
-- Comparison service.
-
----
-
-## 20.4 Intelligence Layer
-
-The intelligence layer contains AI-specific components.
-
-Structure:
-
-```
-intelligence
-├── agents
-├── tools
-├── embeddings
-├── models
-├── rag
-└── prompts
-```
-
-Responsibilities:
-
-- Manage AI workflows.
-- Execute tool calls.
-- Handle retrieval.
-- Generate embeddings.
-- Manage prompts.
-
-This separation allows AI components to change without affecting the application layer.
-
-# 21. Design Principles Used
-
-Arcademia AI follows software design principles that keep the system modular, maintainable, and easier to extend.
-
-These principles help different parts of the system evolve independently without creating unnecessary dependencies.
-
----
-
-## Separation of Responsibility
-
-Each component has a clearly defined responsibility.
-
-Examples:
-
-- MySQL stores structured game information.
-- Vector database handles semantic retrieval.
-- NLP services process and analyze text data.
-- Agents manage AI workflow decisions.
-- Tools provide controlled access to application capabilities.
-- LLM Gateway manages communication with external AI providers.
-
-This separation keeps the system organized and reduces complexity.
-
----
-
-## Loose Coupling
-
-Components communicate through well-defined interfaces instead of depending on internal implementation details.
-
-Example:
-
-The recommendation workflow does not need to know how embeddings are generated or where they are stored.
-
-It only requests similar game information through the semantic search tool.
-
-This allows individual components to be replaced without affecting the complete system.
-
-Examples:
-
-- Changing the embedding model.
-- Replacing the vector database.
-- Changing the LLM provider.
-
----
-
-## Extensibility
-
-The architecture supports future additions without major changes to existing modules.
-
-Possible extensions include:
-
-- New AI workflows.
-- New data sources.
-- Improved NLP models.
-- Additional search capabilities.
-- Real-time data ingestion.
-- New analysis tools.
-
----
-
-## Controlled AI Usage
-
-LLMs are used only where reasoning and natural language generation are required.
-
-The system avoids unnecessary AI calls by using:
-
-- Intent routing.
-- Application logic.
-- Retrieval tools.
-- Cached responses.
-
-This reduces cost, improves response time, and makes the system easier to test.
-
----
-
-## Fault Isolation
-
-Failures in one component should not affect the complete application.
-
-Examples:
-
-- LLM provider failure should not break game search.
-- Vector database failure should allow fallback search.
-- NLP processing failure should not stop complete data ingestion.
-
-Each component should fail independently with proper error handling.
-
----
-
-# 22. API Design
-
-Arcademia AI exposes REST APIs through FastAPI.
-
-The API layer acts as the entry point between the client application and backend services.
-
-Responsibilities:
-
-- Receive client requests.
-- Validate request data.
-- Communicate with application services.
-- Return structured responses.
-
-The API layer does not directly contain:
-
-- Database queries.
-- NLP processing logic.
-- Agent workflow logic.
-
-These responsibilities belong to their respective layers.
-
----
-
-## 22.1 Game Search API
-
-**Endpoint**
-
-```http
-GET /api/games/search
-```
-
-**Purpose**
-
-Search games using structured filters and keyword-based queries.
-
-**Request Example**
-
-```http
-GET /api/games/search?query=survival+rpg
-```
-
-**Processing Flow**
-
-```mermaid
-flowchart TD
-
-Query[User Query]
-API[FastAPI]
-Service[Game Search Service]
-DB[(MySQL Database)]
-Results[Search Results]
-
-Query --> API
-API --> Service
-Service --> DB
-DB --> Results
-```
-
-**Response Example**
-
-```json
-{
-  "games": [
-    {
-      "name": "Example Game",
-      "genre": "RPG",
-      "rating": 4.5
-    }
-  ]
-}
-```
-
----
-
-## 22.2 AI Query API
-
-**Endpoint**
-
-```http
-POST /api/ai/query
-```
-
-**Purpose**
-
-Accept natural language questions and generate AI-powered responses.
-
-**Request**
-
-```json
-{
-  "question": "Why do players like Elden Ring?"
-}
-```
-
-**Processing Flow**
-
-```mermaid
-flowchart TD
-
-Question[User Question]
-API[FastAPI]
-Router[Intent Router]
-Orchestrator[LangGraph Agent Orchestrator]
-Workflow[Required Workflow]
-Tools[Tool Retrieval]
-LLMGateway[LLM Gateway]
-Response[Final Response]
-
-Question --> API
-API --> Router
-Router --> Orchestrator
-Orchestrator --> Workflow
-Workflow --> Tools
-Tools --> LLMGateway
-LLMGateway --> Response
-```
-
-**Response**
-
-```json
-{
-  "answer": "Players appreciate Elden Ring because of...",
-  "sources": [
-    "review_12345",
-    "game_metadata"
-  ]
-}
-```
-
----
-
-## 22.3 Game Comparison API
-
-**Endpoint**
-
-```http
-POST /api/games/compare
-```
-
-**Purpose**
-
-Compare two games using structured data and player feedback.
-
-**Request**
-
-```json
-{
-  "game1": "Witcher 3",
-  "game2": "Skyrim"
-}
-```
-
-**Response**
-
-```json
-{
-  "comparison": {
-    "story": "...",
-    "gameplay": "...",
-    "player_feedback": "..."
-  }
-}
-```
-
----
-
-## 22.4 Recommendation API
-
-**Endpoint**
-
-```http
-POST /api/games/recommend
-```
-
-**Purpose**
-
-Generate game recommendations based on user preferences.
-
-**Request**
-
-```json
-{
-  "preferences": "Open world games with strong storytelling"
-}
-```
-
-**Processing Flow**
-
-```mermaid
-flowchart TD
-
-Preference[User Preference]
-Workflow[Recommendation Workflow]
-Tool[Recommendation Tool]
-Search[Semantic Search + Structured Filtering]
-LLM[LLM Explanation]
-
-Preference --> Workflow
-Workflow --> Tool
-Tool --> Search
-Search --> LLM
-```
-
-**Response**
-
-```json
-{
-  "recommendations": [
-    {
-      "game": "Game Name",
-      "reason": "Similar story and gameplay style"
-    }
-  ]
-}
-```
-
----
-
-# 23. Error Handling
-
-Arcademia AI is designed to handle failures gracefully and provide meaningful responses.
-
-Errors are categorized based on their source.
-
----
-
-## 23.1 Client Errors
-
-These errors occur due to invalid user input.
-
-Examples:
-
-- Empty queries.
-- Missing required fields.
-- Invalid game names.
-- Incorrect request format.
-
-Response example:
-
-```json
-{
-  "error": "Invalid request",
-  "message": "Question cannot be empty"
-}
-```
-
----
-
-## 23.2 Database Errors
-
-Possible database failures:
-
-- MySQL unavailable.
-- Query failure.
-- Connection timeout.
-
-Handling strategy:
-
-- Retry failed connections.
-- Log database errors.
-- Return fallback responses when possible.
-- Avoid exposing internal database details.
-
----
-
-## 23.3 AI Service Errors
-
-Possible AI failures:
-
-- LLM timeout.
-- API rate limit reached.
-- Invalid model response.
-- External provider unavailable.
-
-Handling strategy:
-
-- Use timeout limits.
-- Retry temporary failures.
-- Use fallback providers when available.
-- Return cached responses where possible.
-
-Example:
-
-```
-Unable to generate AI analysis currently.
-Please try again later.
-```
-
----
-
-## 23.4 Vector Search Errors
-
-Possible failures:
-
-- Vector database unavailable.
-- Missing embeddings.
-- Search timeout.
-
-Handling strategy:
-
-```mermaid
-flowchart TD
-
-Search[Search Request]
-Primary[Primary: Vector Similarity Search]
-Fallback[Fallback: MySQL Structured Search]
-
-Search --> Primary
-Primary -.on failure.-> Fallback
-```
-
-The system may provide less detailed results but should continue operating.
-
----
-
-# 24. Failure Scenarios and Solutions
-
-This section describes possible failures and how Arcademia AI handles them.
-
----
-
-## 24.1 Dataset Processing Failure
-
-**Problem**
-
-During ingestion, some records may contain invalid or incomplete information.
-
-Examples:
-
-- Missing game name
-- Invalid release date
-- Corrupted review data
-
-**Solution**
-
-The ingestion pipeline should:
-
-- Validate records before processing.
-- Skip invalid records.
-- Store failed records for debugging.
-- Continue processing valid records.
-
-A single invalid record should not stop the complete pipeline.
-
----
-
-## 24.2 Duplicate Data During Ingestion
-
-**Problem**
-
-The same game may be inserted multiple times during data loading.
-
-**Solution**
-
-Use:
-
-- Unique constraints on `app_id`.
-- Upsert operations.
-- Data validation before insertion.
-
-Example:
-
-```mermaid
-flowchart TD
-
-Check{app_id exists?}
-Update[Update existing record]
-Create[Create new record]
-
-Check -->|Yes| Update
-Check -->|No| Create
-```
-
----
-
-## 24.3 NLP Processing Failure
-
-**Problem**
-
-A review cannot be processed by the NLP pipeline.
-
-Possible reasons:
-
-- Empty text.
-- Invalid format.
-- Model execution failure.
-
-**Solution**
-
-The pipeline should:
-
-- Validate input before processing.
-- Track processing status.
-- Retry failed records.
-- Continue processing remaining reviews.
-
-Example status:
-
-```
-PENDING
-PROCESSING
-COMPLETED
-FAILED
-```
-
----
-
-## 24.4 Incorrect AI Response
-
-**Problem**
-
-LLMs may generate incorrect or unsupported information.
-
-**Solution**
-
-Arcademia AI uses RAG-based responses.
-
-The LLM receives:
-
-- Retrieved game information.
-- Relevant reviews.
-- Processed insights.
-
-The system should also:
-
-- Restrict responses to available context.
-- Include retrieved sources.
-- Reduce unsupported generation.
-
----
-
-## 24.5 LLM Provider Failure
-
-**Problem**
-
-The external LLM provider may be unavailable or rate limited.
-
-**Solution**
-
-The LLM Gateway handles:
-
-- Request retries.
-- Timeout handling.
-- Provider switching.
-- Token tracking.
-
-Possible fallback:
-
-```mermaid
-flowchart TD
-
-Primary[Primary: Groq Llama API]
-Alt[Fallback: Alternative Model Provider]
-Cache[Fallback: Cached Response]
-
-Primary -.on failure.-> Alt
-Primary -.on failure.-> Cache
-```
-
----
-
-## 24.6 Slow AI Response
-
-**Problem**
-
-AI responses may become slow due to:
-
-- Vector search.
-- Retrieval processing.
-- LLM generation.
-
-**Solution**
-
-Use:
-
-- Response caching.
-- Optimized retrieval size.
-- Smaller context windows.
-- Background processing for heavy operations.
-
----
-
-## 24.7 Vector Database Failure
-
-**Problem**
-
-Semantic search becomes unavailable.
-
-**Solution**
-
-The system can temporarily use:
-
-- MySQL filtering.
-- Keyword search.
-- Previously cached results.
-
-The system remains available with reduced search accuracy.
-
----
-
-# 25. Security Considerations
-
-Although Arcademia AI focuses on game analysis, security practices are included.
-
----
-
-## 25.1 Input Validation
-
-All user inputs should be validated before processing.
-
-Examples:
-
-- Maximum query length.
-- Empty request validation.
-- Invalid character handling.
-- Request format validation.
-
-This prevents unexpected application behavior.
-
----
-
-## 25.2 API Protection
-
-Future production versions should include:
-
-- Authentication.
-- Authorization.
-- API rate limiting.
-
-Example:
-
-A single user should not generate unlimited AI requests because external AI services have usage limits.
-
----
-
-## 25.3 Protecting Sensitive Configuration
-
-Sensitive information should never be stored directly in source code.
-
-Examples:
-
-- API keys.
-- Database passwords.
-- Secret tokens.
-
-These values should be managed using:
-
-- Environment variables.
-- Secret management systems.
-- Secure deployment configuration.
-
----
-
-## 25.4 Prompt Safety
-
-Since user input can influence AI workflows, prompt handling should be controlled.
-
-The system should:
-
-- Validate user queries.
-- Prevent unnecessary system instruction exposure.
-- Restrict unsafe model behavior.
-- Keep prompts managed internally.
-
----
-
-# 26. Performance Optimization
-
-Arcademia AI uses multiple strategies to improve response time and reduce resource usage.
-
----
-
-## 26.1 Database Optimization
-
-MySQL optimization includes:
-
-- Proper indexing.
-- Efficient queries.
-- Pagination.
-- Query optimization.
-
-Example:
-
-Instead of loading all games:
-
-```sql
-SELECT * FROM games;
-```
-
-Use:
-
-```sql
-SELECT *
-FROM games
-LIMIT 20 OFFSET 0;
-```
-
-This prevents unnecessary data retrieval.
-
----
-
-## 26.2 Embedding Optimization
-
-Generating embeddings during every user request increases latency and cost.
-
-Therefore, embeddings are generated during offline data processing.
-
-Runtime flow:
-
-```mermaid
-flowchart TD
-
-Query[User Query]
-Embed[Generate Query Embedding]
-Search[Search Existing Embeddings]
-Results[Retrieve Relevant Results]
-
-Query --> Embed
-Embed --> Search
-Search --> Results
-```
-
----
-
-## 26.3 Caching
-
-Frequently requested information can be cached.
-
-Examples:
-
-- Popular game searches.
-- Common comparisons.
-- Frequently asked questions.
-
-Caching flow:
-
-```mermaid
-flowchart LR
-
-API[FastAPI]
-Cache[Redis Cache]
-Services[Application Services]
-Data[Database / AI Workflow]
-
-API --> Cache
-Cache --> Services
-Services --> Data
-```
-
-Benefits:
-
-- Reduced response time.
-- Lower LLM usage.
-- Reduced database load.
-
----
-
-## 26.4 Background Processing
-
-Heavy operations should not block user requests.
-
-Examples:
-
-- Dataset ingestion.
-- Embedding generation.
-- Large NLP processing jobs.
-
-Future architecture:
-
-```mermaid
-flowchart LR
-
-API[API]
-Queue[Message Queue]
-Worker[Worker Service]
-Processing[NLP / Data Processing]
-
-API --> Queue
-Queue --> Worker
-Worker --> Processing
-```
-
-This allows long-running tasks to execute independently.
-
----
-
-# 27. Scalability Strategy
-
-The current architecture is designed for a small development environment but supports future expansion.
-
----
-
-## 27.1 Adding More Data Sources
-
-Current source:
-
-- Steam Dataset
-
-Future sources:
-
-- Steam API
-- Gaming News Sources
-- Community Forums
-
-The ingestion layer can be extended without changing AI workflows.
-
----
-
-## 27.2 Adding More AI Workflows
-
-New workflows can be added independently.
-
-Current workflows:
-
-- Recommendation Workflow
-- Review Analysis Workflow
-- Comparison Workflow
-
-Future workflows:
-
-- Trend Analysis Workflow
-- Price Analysis Workflow
-- Community Analysis Workflow
-
-The agent orchestration layer allows new workflows to be added without changing existing components.
-
-## 27.3 Model Replacement
-
-Arcademia AI is designed to remain independent from any specific AI model implementation.
-
-AI components are isolated behind dedicated services so that models can be replaced without affecting the rest of the system.
-
-Example:
-
-Current embedding model:
-
-```
-Embedding Model A
-```
-
-Future embedding model:
-
-```
-Embedding Model B
-```
-
-Only the embedding service requires modification.
-
-Other components remain unchanged:
-
-- Application layer.
-- Agent workflows.
-- Tool layer.
-- RAG pipeline.
-- Database layer.
-
-The same approach applies to:
-
-- Embedding models.
-- NLP classification models.
-- LLM providers.
-
-The LLM Gateway provides abstraction between AI workflows and external model providers, allowing providers such as Groq Llama or other compatible models to be changed without modifying application logic.
-
----
-
-# 28. Deployment Architecture
-
-Arcademia AI is designed as a collection of independent services.
-
-Each service has a clear responsibility and can be deployed separately.
-
-The deployment architecture is:
-
-```mermaid
-flowchart TD
-
-User[User]
-
-Client[Client Application]
-
-API[FastAPI Application]
-
-Cache[Redis Cache]
-
-MySQL[(MySQL Database)]
-
-Vector[(Vector Database)]
-
-NLP[NLP Services]
-
-LLMGateway[LLM Gateway]
-
-LLM[External LLM Provider]
-
-
-User --> Client
-
-Client --> API
-
-API --> Cache
-
-API --> MySQL
-
-API --> Vector
-
-API --> NLP
-
-API --> LLMGateway
-
-LLMGateway --> LLM
-```
-
----
-
-## 28.1 Containerization
-
-Docker is used to package application components into isolated containers.
-
-A possible deployment setup:
-
-`docker-compose.yml`
-
-```yaml
-services:
-  client-application
-  api-service
-  mysql
-  vector-database
-  redis
-  nlp-service
-```
-
-Benefits:
-
-- Same development and deployment environment.
-- Easier dependency management.
-- Faster project setup.
-- Independent service execution.
-
----
-
-## 28.2 Environment Configuration
-
-Application configuration should be managed separately from source code.
-
-Examples:
-
-- Database connection details.
-- API keys.
-- LLM provider configuration.
-- Service URLs.
-
-Configuration should be provided through:
-
-- Environment variables.
-- Deployment configuration files.
-- Secret management systems.
-
----
-
-## 28.3 Deployment Scaling
-
-Different components can scale independently based on workload.
-
-Examples:
-
-| Scenario | Scaling response |
+| Condition | Required behavior |
 |---|---|
-| High API traffic | Increase API service instances |
-| Large NLP processing workload | Increase NLP worker instances |
-| Heavy vector search usage | Scale vector database resources |
+| MySQL transient failure | Bounded retry, then controlled failure |
+| Redis unavailable | Continue without cache where safe |
+| Qdrant unavailable | Use structured retrieval where sufficient; otherwise report degraded semantic capability |
+| LLM unavailable | Core discovery continues; Deep Dive reports controlled unavailability |
+| Invalid model output | Validate, retry within policy, or fail safely |
+| Agent budget exceeded | Stop execution and return controlled result |
+| Insufficient evidence | Qualify or abstain; do not invent facts |
+| Invalid dataset record | Quarantine and continue valid records |
+| Worker failure | Leave job retryable or mark for recovery |
 
-The architecture avoids making the complete application dependent on a single service instance.
+External calls shall have timeouts. Retries shall be bounded and used only where appropriate.
 
 ---
 
-# 29. Logging and Monitoring
+## 20. Performance and Cost Requirements
 
-Arcademia AI maintains logs to understand system behavior and identify failures.
+### 20.1 Interactive Requests
 
-Important events include:
+Interactive requests shall avoid:
 
-- API requests.
-- Request processing time.
-- Failed ingestion jobs.
-- NLP processing failures.
-- Database errors.
-- Vector search failures.
-- LLM provider failures.
-- Token usage information.
+- full-dataset scans;
+- repeated NLP inference;
+- synchronous bulk processing;
+- unbounded agent loops;
+- unnecessary sequential model calls.
 
-Example:
+### 20.2 Database
 
+The system shall use indexed lookup fields, foreign-key indexes where needed, parameterized queries, and paginated access for large result sets.
+
+### 20.3 Vector Retrieval
+
+Vector retrieval shall be evaluated for latency, recall, filtering behavior, and memory use.
+
+### 20.4 LLM Cost
+
+The core discovery path shall not require a per-request external LLM call.
+
+LLM usage shall be limited through deterministic routing, bounded contexts, selective retrieval, caching where justified, and optional model routing.
+
+The system shall record token usage and estimated cost where the provider exposes the required information.
+
+---
+
+## 21. Caching and Background Work
+
+### 21.1 Redis
+
+Redis may be used for:
+
+- cached game lookups;
+- expensive deterministic discovery results;
+- suitable retrieval results;
+- rate-limit state;
+- background job coordination.
+
+Redis shall not be the authoritative store for business data.
+
+### 21.2 Background Jobs
+
+Background jobs shall handle:
+
+- dataset ingestion;
+- review analysis;
+- embeddings;
+- Experience Profile derivation;
+- vector index rebuilds;
+- bulk reprocessing;
+- large evaluation jobs.
+
+Jobs shall be identifiable, retryable where safe, and observable.
+
+---
+
+## 22. Observability
+
+Each request shall have a request ID.
+
+Each AI execution shall have an AI run ID.
+
+Each background job shall have a job or processing-run ID.
+
+Important telemetry shall include:
+
+- request count;
+- error rate;
+- latency;
+- database latency;
+- cache hit rate;
+- retrieval latency;
+- retrieval result quality metrics;
+- agent step count;
+- tool success rate;
+- model latency;
+- token usage where available;
+- data-processing throughput and failures.
+
+Logs shall not contain secrets, passwords, API keys, or unnecessary full user conversations.
+
+---
+
+## 23. Testing and Evaluation
+
+### 23.1 Unit Tests
+
+Unit tests shall cover deterministic logic including:
+
+- filtering;
+- similarity;
+- Match calculation;
+- ranking;
+- diversity;
+- novelty;
+- Blend calculations;
+- preference updates;
+- validation;
+- authorization rules.
+
+### 23.2 Integration Tests
+
+Integration tests shall cover:
+
+- MySQL;
+- Redis;
+- Qdrant;
+- authentication;
+- module interfaces;
+- background jobs;
+- API flows.
+
+### 23.3 AI Evaluation
+
+A curated evaluation set shall cover:
+
+- semantic search;
+- recommendations;
+- comparisons;
+- review questions;
+- insufficient-evidence cases;
+- multi-step questions;
+- adversarial prompts;
+- multi-turn cases.
+
+Retrieval shall be evaluated separately from generation.
+
+Agent evaluation shall include tool selection, valid tool arguments, correct termination, evidence use, unsupported-claim rate, latency, and token usage.
+
+### 23.4 Regression
+
+Changes to models, prompts, embeddings, retrieval configuration, tools, agent workflows, or processing versions shall trigger relevant regression tests.
+
+### 23.5 End-to-End
+
+End-to-end tests shall cover:
+
+- registration and login;
+- search;
+- comparison;
+- Blend;
+- Discovery Path;
+- saving to My Library;
+- My Preferences updates;
+- semantic search;
+- Deep Dive;
+- dependency failure behavior.
+
+---
+
+## 24. Deployment Requirements
+
+### 24.1 Initial Topology
+
+```mermaid
+flowchart LR
+    Client[React Web Client] --> API[FastAPI Application]
+
+    API --> DB[(MySQL)]
+    API --> Cache[(Redis)]
+    API --> Vector[(Qdrant)]
+    API --> LLM[LLM Provider]
+
+    Worker[Background Worker] --> DB
+    Worker --> Cache
+    Worker --> Vector
+    Worker --> NLP[NLP / Embedding Models]
 ```
-INFO: Processed game embeddings successfully
 
-ERROR: Vector database connection failed
-```
+### 24.2 Containerization
 
----
+Docker shall be used for reproducible local development and deployment packaging.
 
-## 29.1 Logging Strategy
+Containers shall follow runtime roles rather than business capabilities.
 
-Logs should contain useful debugging information without exposing sensitive data.
+### 24.3 Environment Separation
 
-Important log information:
+At minimum, the system shall support:
 
-- Request identifier.
-- Component name.
-- Execution status.
-- Error details.
-- Processing duration.
+- local development;
+- test/CI;
+- hosted production or demonstration.
 
-Example:
+Environment-specific configuration shall be externalized.
 
-```
-Request ID: abc123
-Component: Recommendation Workflow
-Status: FAILED
-Reason: LLM timeout
-```
+### 24.4 Scaling
+
+API and worker processes shall be scalable independently.
+
+The system shall not introduce microservices solely to obtain this process-level scaling.
 
 ---
 
-## 29.2 Monitoring Metrics
+## 25. Constraints and Assumptions
 
-Future monitoring can track:
+### 25.1 Constraints
 
-**Application Metrics**
+- Small engineering team.
+- Modular monolith architecture.
+- One primary external data source initially.
+- Deterministic discovery core.
+- Background processing for expensive work.
+- Replaceable AI providers.
+- No real-time gameplay telemetry requirement.
 
-- API response latency.
-- Request count.
-- Error rate.
-- Active users.
+### 25.2 Assumptions
 
-**AI Metrics**
-
-- LLM response time.
-- Token consumption.
-- Failed generations.
-- Retrieval quality.
-
-**Infrastructure Metrics**
-
-- CPU usage.
-- Memory usage.
-- Database health.
-- Service availability.
+- The selected dataset remains technically accessible.
+- Dataset license and redistribution terms are verified before public release.
+- Source data requires validation and normalization.
+- Exact models, weights, and retrieval thresholds are selected using evaluation evidence.
+- The initial workload fits a small deployment with separate API and worker processes.
 
 ---
 
-# 30. Testing Strategy
+## 26. Architecture Decisions
 
-Testing is divided into multiple levels to validate application logic, data processing, and AI workflows.
+### ADR-001: Modular Monolith
 
----
+**Decision:** Use a modular monolith.  
+**Reason:** The system has one application boundary and a small engineering team. Independent service deployment is not currently justified.
 
-## 30.1 Unit Testing
+### ADR-002: Business-Capability Boundaries
 
-Unit tests validate individual components independently.
+**Decision:** Organize modules around business capabilities.  
+**Reason:** Business capabilities provide clearer ownership and change boundaries than technical layers such as API, NLP, or database services.
 
-Examples:
+### ADR-003: Deterministic Discovery Core
 
-- Data cleaning functions.
-- Sentiment processing functions.
-- Recommendation logic.
-- API validation.
-- Utility functions.
+**Decision:** Discovery, matching, ranking, Blend, and personalization shall not require an LLM.  
+**Reason:** This reduces cost, improves predictability, supports testing, and keeps core functionality available during model-provider failures.
 
-The goal is to verify that individual modules work correctly.
+### ADR-004: Bounded Single Agent
 
----
+**Decision:** Use a bounded single agent for dynamic AI investigation.  
+**Reason:** Multi-agent coordination is not currently required and would add unnecessary complexity.
 
-## 30.2 Integration Testing
+### ADR-005: Offline Enrichment
 
-Integration tests verify communication between different system components.
+**Decision:** Review analysis, embeddings, and bulk Experience Profile computation shall run as background work.  
+**Reason:** These operations are compute-heavy and should not block interactive requests.
 
-Examples:
+### ADR-006: Provider Adapters
 
-- API to application service.
-- Application service to MySQL.
-- Tool layer to vector database.
-- Agent workflow execution.
-- LLM Gateway communication.
+**Decision:** LLM and embedding providers shall be accessed through adapters.  
+**Reason:** This keeps provider-specific behavior outside business logic and supports replacement.
 
----
+### ADR-007: MCP as Interoperability
 
-## 30.3 Data Pipeline Testing
+**Decision:** MCP is the interoperability boundary for capabilities that Arcademia exposes to compatible AI clients or external tools.  
+**Reason:** Internal tool calling remains application-defined. MCP provides an external interoperability contract without changing domain module boundaries.
 
-The ingestion and NLP pipelines require separate validation.
+### ADR-008: Authentication with Anonymous Entry
 
-Testing includes:
-
-- CSV loading.
-- Data validation.
-- Data transformation.
-- Database insertion.
-- Embedding generation.
-- Failed record handling.
-
-Example:
-
-A corrupted review should fail gracefully without stopping the complete pipeline.
+**Decision:** Authentication is part of the initial system, but anonymous exploration remains supported.  
+**Reason:** Persistent features need identity, while mandatory registration before first use adds unnecessary friction.
 
 ---
 
-## 30.4 AI Workflow Testing
+## 27. Acceptance Criteria
 
-AI systems cannot be tested only through exact output matching.
+The system is ready for initial public deployment when:
 
-Evaluation focuses on:
-
-- Response relevance.
-- Retrieval accuracy.
-- Context quality.
-- Hallucination reduction.
-- Tool selection correctness.
-
-Example:
-
-For a recommendation query:
-
-Expected:
-
-- Relevant games retrieved
-- Correct explanation
-
-Not only:
-
-- Exact sentence match
-
----
-
-## 30.5 Performance Testing
-
-Performance testing validates system behavior under load.
-
-Examples:
-
-- Multiple simultaneous API requests.
-- Large search queries.
-- High-volume recommendation requests.
-- Large NLP processing jobs.
-
-The objective is to identify bottlenecks before deployment.
+1. A visitor can search and discover games without an account.
+2. A visitor can compare games and create a temporary Blend.
+3. A user can register, authenticate, and access private data.
+4. A user can save games and discoveries in My Library.
+5. A user can create and transform a Blend using 2 to 5 games.
+6. Blend results are generated through deterministic ranking.
+7. A user can create, branch, reopen, and navigate a Discovery Path.
+8. A Discovery Board represents the saved or active path.
+9. My Preferences uses supported explicit and behavioral signals.
+10. Semantic search works against the indexed corpus.
+11. Review-derived insights are available for supported games.
+12. Deep Dive can execute a bounded multi-step AI investigation using controlled tools.
+13. AI answers requiring application facts use retrieved evidence.
+14. The deterministic core continues to function when the LLM provider is unavailable.
+15. Ingestion and enrichment are rerunnable and observable.
+16. Core deterministic logic and critical user flows have automated tests.
+17. User authorization protects private data.
+18. Operational health and failure telemetry are available.
+19. Source licensing and redistribution requirements have been reviewed before public deployment.
 
 ---
 
-# 31. Future Improvements
+## 28. Future Evolution
 
-The current architecture provides a foundation for additional capabilities.
+Future capabilities may include:
 
----
+- additional game data sources;
+- richer personalization;
+- learned ranking;
+- temporal review analysis;
+- stronger experience modeling;
+- additional MCP integrations;
+- additional AI workflows;
+- extraction of a bounded module into a service when independently scaling or deploying it becomes necessary.
 
-## Real-Time Data Updates
-
-Currently, Arcademia AI processes a static Steam dataset.
-
-Future improvements can include:
-
-- Scheduled Steam API ingestion.
-- Automatic dataset refresh.
-- Incremental data updates.
-
-The ingestion layer can be extended without changing AI workflows.
+Future technology shall be introduced only when a requirement or measured result justifies it.
 
 ---
 
-## Better Recommendations
+## 29. References
 
-Future recommendation improvements can include:
+**[1] Requirements Engineering**  
+ISO/IEC/IEEE 29148:2018, *Systems and software engineering - Life cycle processes - Requirements engineering*.  
+https://www.iso.org/standard/72089.html
 
-- User preference tracking.
-- Collaborative filtering.
-- Personalized recommendations.
-- Play history analysis.
+**[2] Usability**  
+Nielsen Norman Group, *10 Usability Heuristics for User Interface Design*.  
+https://www.nngroup.com/articles/ten-usability-heuristics/
 
----
+**[3] Data Source**  
+Steam Games Dataset, Kaggle.  
+https://www.kaggle.com/datasets/hubertsidorowicz/steam-games-dataset-daily-updates
 
-## Knowledge Graph Integration
+**[4] AI Orchestration**  
+LangGraph documentation.  
+https://langchain-ai.github.io/langgraph/reference/
 
-A knowledge graph can be added to represent relationships between entities.
+**[5] AI Security**  
+OWASP GenAI Security Project, *Top 10 for Agentic Applications*.  
+https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
 
-Possible relationships:
+**[6] AI Risk Management**  
+NIST, *Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile*.  
+https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence
 
-- Games.
-- Developers.
-- Genres.
-- Characters.
-- Players.
-- Reviews.
+**[7] Tool Interoperability**  
+Model Context Protocol.  
+https://modelcontextprotocol.io/
 
-This can improve complex queries and relationship-based analysis.
-
----
-
-## Better AI Evaluation
-
-Future improvements can include automated evaluation systems for:
-
-- Search quality.
-- Recommendation accuracy.
-- RAG retrieval quality.
-- AI response correctness.
+**[8] Vector Retrieval**  
+Qdrant documentation.  
+https://qdrant.tech/documentation/
 
 ---
 
-## Cloud Deployment
+## 30. Requirements Change Rules
 
-The platform can be deployed using cloud services.
+Changes to this baseline shall follow these rules:
 
-Possible technologies:
-
-- Azure.
-- Docker.
-- Managed databases.
-- Cloud-based AI services.
-
-Cloud deployment can improve reliability, scalability, and availability.
-
----
-
-# 32. Conclusion
-
-Arcademia AI combines structured data processing, NLP, transformer models, semantic search, RAG workflows, and agent-based AI orchestration to create an intelligent game analysis platform.
-
-The architecture separates responsibilities between different system components:
-
-- MySQL manages structured game information.
-- NLP services process and analyze player reviews.
-- Vector databases provide semantic retrieval.
-- Tools provide controlled access to application capabilities.
-- Agents coordinate AI workflows.
-- LLM Gateway manages communication with AI providers.
-
-The design focuses on maintainability, scalability, fault tolerance, and future extensibility while keeping the system practical to develop and improve.
+- Mandatory behavior uses **shall**.
+- Recommended behavior uses **should**.
+- Requirements shall be testable and stated in clear language.
+- New business modules shall be justified by a business capability.
+- Technical libraries shall not define business boundaries.
+- New AI autonomy shall require a documented need.
+- Architecture changes shall record the decision, reason, and trigger for reconsideration.
+- User-facing terminology shall remain consistent unless a deliberate terminology decision changes it.
